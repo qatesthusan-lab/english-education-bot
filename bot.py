@@ -30,7 +30,7 @@ if not GEMINI_API_KEY:
 # GEMINI SETUP
 # ==============================
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("models/gemini-pro")
+model = genai.GenerativeModel("models/gemini-1.5-flash-latest")
 
 # ==============================
 # LOGGING
