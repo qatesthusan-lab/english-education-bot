@@ -1,6 +1,2 @@
-<<<<<<< HEAD
 python-telegram-bot==20.7
-google-generativeai==0.3.2
-=======
-python-telegram-bot==22.6
->>>>>>> ec19cba3f820a54e242ffec62aa63d9da673526a
+# google-generativeai==0.3.2
