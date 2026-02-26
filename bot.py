@@ -4,7 +4,7 @@ import random
 import asyncio
 from typing import Dict, Any
 
-import google.generativeai as genai
+from google import genai
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -27,10 +27,9 @@ if not GEMINI_API_KEY:
     raise ValueError("GEMINI_API_KEY topilmadi!")
 
 # ==============================
-# GEMINI SETUP
+# GEMINI NEW SDK
 # ==============================
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("models/gemini-1.5-flash-latest")
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 # ==============================
 # LOGGING
@@ -61,7 +60,7 @@ main_menu = [["📘 Grammar", "📝 IELTS Quiz"], ["🎯 CEFR Test"]]
 
 
 # ==============================
-# COMMANDS
+# START
 # ==============================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message:
@@ -70,7 +69,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = ReplyKeyboardMarkup(main_menu, resize_keyboard=True)
 
     await update.message.reply_text(
-        "🎓 Welcome!\n\n" "• Use menu buttons\n" "• Or just chat with AI in English 🤖",
+        "🎓 Welcome to English Education Bot!\n\n"
+        "• Use menu buttons\n"
+        "• Or just chat with AI in English 🤖",
         reply_markup=keyboard,
     )
 
@@ -125,19 +126,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # ==============================
-    # AI CHAT
+    # AI CHAT (WORKING VERSION)
     # ==============================
     try:
-        response = await asyncio.to_thread(model.generate_content, update.message.text)
+        response = await asyncio.to_thread(
+            client.models.generate_content,
+            model="gemini-2.0-flash",
+            contents=update.message.text,
+        )
 
-        if response and hasattr(response, "text") and response.text:
+        if response.text:
             await update.message.reply_text(response.text[:4000])
         else:
             await update.message.reply_text("AI javob bera olmadi 😢")
 
     except Exception as e:
         logging.error(f"Gemini error: {e}")
-        await update.message.reply_text("AI error 😢")
+        await update.message.reply_text(f"AI error:\n{e}")
 
 
 # ==============================
