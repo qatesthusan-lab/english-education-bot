@@ -232,7 +232,7 @@
 #     return str
 
 
-def digitize(n):
-    s = str(n)
-    s[::-1]
-    [int(x) for x in s]
+# def digitize(n):
+#     s = str(n)
+#     s[::-1]
+#     [int(x) for x in s]
