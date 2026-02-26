@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 import os
 import asyncio
 from telegram import Update
@@ -126,4 +126,4 @@ def main():
 
 if __name__ == "__main__":
     main()
->>>>>>> ec19cba3f820a54e242ffec62aa63d9da673526a
+
