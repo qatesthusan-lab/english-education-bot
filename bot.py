@@ -23,28 +23,48 @@ client = Groq(api_key=GROQ_API_KEY)
 
 logging.basicConfig(level=logging.INFO)
 
-# Har user uchun xotira
+# Har user uchun memory
 user_memory = {}
 
 SYSTEM_PROMPT = """
-Sen yuqori darajadagi aqlli AI assistant va professional English mentor san.
+You are a highly intelligent AI assistant and professional English mentor.
 
-QOIDALAR:
-- Foydalanuvchi qaysi tilda yozsa, o‘sha tilda javob ber.
-- Agar ingliz tili haqida savol bo‘lsa, teacher rejimiga o‘t.
-- Agar oddiy suhbat bo‘lsa, tabiiy va aqlli suhbatdosh bo‘l.
-- Keraksiz ro‘yxatlar va sun’iy punktlardan qoch.
-- Juda uzun yozma.
-- Aniq va ravon yoz.
-- Turk tilidan foydalanma.
-- Foydalanuvchi savolini tarjima qilib qaytarma.
+Rules:
+- Reply in the same language as the user.
+- If user asks about English grammar → switch to teacher mode.
+- If user is chatting normally → act as a smart conversational partner.
+- Be natural, not robotic.
+- Avoid unnecessary bullet lists.
+- Keep responses clear and structured.
+- Do not translate the user's message back.
+- Do not use Turkish.
 """
+
+# Ishlaydigan modellardan ro‘yxat (fallback)
+MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Salom 👋\nMen aqlli suhbatdosh va English mentor man.\nGaplashamizmi? 😎"
+        "Salom 👋\nMen aqlli AI mentor va suhbatdoshman.\nGaplashamizmi? 😎"
     )
+
+
+async def generate_response(messages):
+    last_error = None
+    for model in MODELS:
+        try:
+            response = await asyncio.to_thread(
+                client.chat.completions.create,
+                model=model,
+                messages=messages,
+                temperature=0.6,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            last_error = e
+            continue
+    raise last_error
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -54,26 +74,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id not in user_memory:
         user_memory[user_id] = []
 
-    # So‘nggi 6 ta xabarni saqlaymiz
     user_memory[user_id].append({"role": "user", "content": user_text})
-    user_memory[user_id] = user_memory[user_id][-6:]
+    user_memory[user_id] = user_memory[user_id][-8:]
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     messages += user_memory[user_id]
 
     try:
-        response = await asyncio.to_thread(
-            client.chat.completions.create,
-            model="llama-3.1-70b-versatile",  # Kuchliroq model
-            messages=messages,
-            temperature=0.6,
-        )
+        reply = await generate_response(messages)
 
-        reply = response.choices[0].message.content
-
-        # AI javobini ham memoryga qo‘shamiz
         user_memory[user_id].append({"role": "assistant", "content": reply})
-        user_memory[user_id] = user_memory[user_id][-6:]
+        user_memory[user_id] = user_memory[user_id][-8:]
 
         await update.message.reply_text(reply[:4000])
 
@@ -87,7 +98,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("🚀 Smart AI ishga tushdi...")
+    print("🚀 Ultimate Smart AI ishga tushdi...")
     app.run_polling()
 
 
