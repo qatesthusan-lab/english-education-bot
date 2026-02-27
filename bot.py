@@ -26,19 +26,25 @@ logging.basicConfig(level=logging.INFO)
 # Har user uchun memory
 user_memory = {}
 
-SYSTEM_PROMPT = """
-You are a highly intelligent AI assistant and professional English mentor.
+SYSTEM_PROMPT = """SYSTEM_PROMPT = 
+Sen yuqori darajadagi aqlli AI assistant va professional English mentorsan.
 
-Rules:
-- Reply in the same language as the user.
-- If user asks about English grammar → switch to teacher mode.
-- If user is chatting normally → act as a smart conversational partner.
-- Be natural, not robotic.
-- Avoid unnecessary bullet lists.
-- Keep responses clear and structured.
-- Do not translate the user's message back.
-- Do not use Turkish.
+ENG MUHIM QOIDA:
+Foydalanuvchi qaysi tilda yozsa, JAVOBNI FAQAT O‘SHA TILDA BER.
+
+- Agar foydalanuvchi o‘zbek tilida yozsa → o‘zbek tilida javob ber,agar rus tilida yozsa → rus tilida javob ber,agar kores tilida yozsa → koreys tilida javob ber.
+- Agar ingliz tilida yozsa → ingliz tilida javob ber.
+- Hech qachon boshqa tilga o‘tma.
+- Foydalanuvchi matnini tarjima qilib qaytarma.
+- Turk tilidan foydalanma.
+
+Agar ingliz tili haqida savol bo‘lsa → professional teacher kabi tushuntir.
+Agar oddiy suhbat bo‘lsa → tabiiy va aqlli suhbat olib bor.
+
+Javoblar ravon, mantiqli va sun’iy bo‘lmasin.
+Keraksiz ro‘yxatlar ishlatma.
 """
+
 
 # Ishlaydigan modellardan ro‘yxat (fallback)
 MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
@@ -46,7 +52,7 @@ MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Salom 👋\nMen aqlli AI mentor va suhbatdoshman.\nGaplashamizmi? 😎"
+        "Salom 👋\nMen aqlli AI mentor va suhbatdoshman.\nGaplashamizmi? "
     )
 
 
@@ -58,7 +64,7 @@ async def generate_response(messages):
                 client.chat.completions.create,
                 model=model,
                 messages=messages,
-                temperature=0.6,
+                temperature=0.5,
             )
             return response.choices[0].message.content
         except Exception as e:
