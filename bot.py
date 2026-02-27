@@ -23,47 +23,32 @@ if not BOT_TOKEN:
 if not GROQ_API_KEY:
     raise ValueError("GROQ_API_KEY topilmadi!")
 
-# ==============================
-# GROQ CLIENT
-# ==============================
 client = Groq(api_key=GROQ_API_KEY)
 
-# ==============================
-# LOGGING
-# ==============================
-logging.basicConfig(
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
-)
+logging.basicConfig(level=logging.INFO)
 
 # ==============================
-# PROFESSIONAL SYSTEM PROMPT
+# 1️⃣ MAIN SYSTEM PROMPT
 # ==============================
-SYSTEM_PROMPT = """
+MAIN_PROMPT = """
 Sen professional English mentor va aqlli suhbatdoshsan.
 
-SENING VAZIFANG:
-- Ingliz tilini professional darajada o‘rgatish
-- Oddiy va tushunarli qilib tushuntirish
-- Do‘stona, lekin professional ohangda gapirish
-- Kerak bo‘lsa misollar berish
-- Grammatikani sodda qilib tushuntirish
-- Foydalanuvchining saviyasiga moslashish
-
 QOIDALAR:
-- Asosan O‘ZBEK tilida tushuntir.
-- Agar misol kerak bo‘lsa inglizcha misol ber, lekin izohini o‘zbekcha qil.
-- Hech qachon turk tilida yozma.
+- Asosan o‘zbek tilida tushuntir.
+- Inglizcha misol bersang, izohini o‘zbekcha qil.
+- Turk tilidan foydalanma.
 - Foydalanuvchi savolini tarjima qilib qaytarma.
-- Agar oddiy suhbat bo‘lsa, tabiiy va aqlli suhbatdosh kabi javob ber.
-- Juda uzun va zerikarli yozma.
-- Aniq, strukturali va tushunarli yoz.
+- Qisqa, aniq va mantiqli yoz.
+"""
 
-Agar foydalanuvchi shunchaki gaplashmoqchi bo‘lsa —
-aqlli, qiziqarli suhbat olib bor.
-
-Agar u grammar yoki IELTS haqida so‘rasa —
-professional teacher rejimiga o‘t.
+# ==============================
+# 2️⃣ GRAMMAR FIX PROMPT
+# ==============================
+GRAMMAR_FIX_PROMPT = """
+Quyidagi matnni adabiy va grammatik jihatdan to‘g‘ri O‘ZBEK tiliga tuzat.
+Mazmunni o‘zgartirma.
+Keraksiz ro‘yxat va sun’iy iboralarni olib tashla.
+Faqat tozalangan matnni qaytar.
 """
 
 
@@ -71,40 +56,47 @@ professional teacher rejimiga o‘t.
 # START
 # ==============================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message:
-        await update.message.reply_text(
-            "Salom 👋\n\n"
-            "Men sizning English mentor va aqlli suhbatdoshingizman.\n"
-            "Savol bering yoki shunchaki gaplashamiz 🤖"
-        )
+    await update.message.reply_text(
+        "Salom 👋\n\n"
+        "Men professional English mentor va aqlli suhbatdoshman.\n"
+        "Savol bering yoki gaplashamiz 🤖"
+    )
 
 
 # ==============================
 # MESSAGE HANDLER
 # ==============================
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message:
-        return
-
     user_text = update.message.text
 
     try:
-        response = await asyncio.to_thread(
+        # 1️⃣ STEP — AI javob yaratadi
+        first_response = await asyncio.to_thread(
             client.chat.completions.create,
             model="llama-3.1-8b-instant",
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": MAIN_PROMPT},
                 {"role": "user", "content": user_text},
             ],
-            temperature=0.7,
+            temperature=0.4,
         )
 
-        reply = response.choices[0].message.content
+        raw_reply = first_response.choices[0].message.content
 
-        if reply:
-            await update.message.reply_text(reply[:4000])
-        else:
-            await update.message.reply_text("AI javob bera olmadi.")
+        # 2️⃣ STEP — O‘zbek grammatik tuzatish
+        fixed_response = await asyncio.to_thread(
+            client.chat.completions.create,
+            model="llama-3.1-8b-instant",
+            messages=[
+                {"role": "system", "content": GRAMMAR_FIX_PROMPT},
+                {"role": "user", "content": raw_reply},
+            ],
+            temperature=0.2,
+        )
+
+        final_reply = fixed_response.choices[0].message.content
+
+        await update.message.reply_text(final_reply[:4000])
 
     except Exception as e:
         await update.message.reply_text(f"Xatolik:\n{e}")
@@ -119,7 +111,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("🚀 Professional AI Bot ishga tushdi...")
+    print("🚀 2-Bosqichli AI Bot ishga tushdi...")
     app.run_polling()
 
 
