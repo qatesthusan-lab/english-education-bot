@@ -236,3 +236,36 @@
 #     s = str(n)
 #     s[::-1]
 #     [int(x) for x in s]
+
+
+# def update_light(current):
+#     lst = ["green", "yellow", "red"]
+#     if current == lst[0]: return lst[1]
+#     if current == lst[1]:return lst[2]
+#     return lst[0]
+
+
+# print(update_light("green"))
+
+
+# def update_light(current):
+#     return {"green": "yellow", "yellow": "red", "red": "green"}[current]
+
+
+# print(update_light("red"))
+
+from calendar import c
+import random
+
+
+# random.choice(["green", "yellow", "red"])
+
+current = random.choice(["green", "yellow", "red"])
+
+
+def update_light(current):
+    light_orders = {"green": "yellow", "yellow": "red", "red": "green"}
+    return light_orders[current]
+
+
+print(update_light(current))

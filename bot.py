@@ -2,7 +2,7 @@ import os
 import logging
 import asyncio
 from groq import Groq
-from telegram import Update
+from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -11,49 +11,41 @@ from telegram.ext import (
     filters,
 )
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+# --- SIZNING TOKENLARINGIZ ---
+BOT_TOKEN = "BOT_TOKEN"
+GROQ_API_KEY = "GROQ_API_KEY"
 
-if not BOT_TOKEN:
-    raise ValueError("BOT_TOKEN topilmadi!")
-if not GROQ_API_KEY:
-    raise ValueError("GROQ_API_KEY topilmadi!")
-
+# Groq mijozini sozlash
 client = Groq(api_key=GROQ_API_KEY)
-
 logging.basicConfig(level=logging.INFO)
 
-# Har user uchun memory
-user_memory = {}
+# QA Mutaxassisi uchun Professional Prompt
+SYSTEM_PROMPT = """Siz professional Senior QA Automation Engineer va Manual Testerisiz. 
+Vazifangiz: Checklist, Test Case va Bug Report tayyorlashda yordam berish.
 
-SYSTEM_PROMPT = """SYSTEM_PROMPT = 
-Sen yuqori darajadagi aqlli AI assistant va professional English mentorsan.
+QA STANDARTLARI:
+1. Test Case yozganda: ID, Title, Pre-conditions, Steps, Expected Result formatida yozing.
+2. Bug Report yozganda: Summary, Steps to Reproduce, Expected vs Actual Result, Severity bo'lsin.
+3. Checklist yozganda: Mantiqiy guruhlangan (UI, Functional, Performance) qismlarga bo'ling.
 
-ENG MUHIM QOIDA:
+TIL QOIDASI:
 Foydalanuvchi qaysi tilda yozsa, JAVOBNI FAQAT O‘SHA TILDA BER.
-
-- Agar foydalanuvchi o‘zbek tilida yozsa → o‘zbek tilida javob ber,agar rus tilida yozsa → rus tilida javob ber,agar kores tilida yozsa → koreys tilida javob ber
-- Agar ingliz tilida yozsa → ingliz tilida javob ber.
-- Hech qachon boshqa tilga o‘tma.
-- Foydalanuvchi matnini tarjima qilib qaytarma.
-- Turk tilidan foydalanma.
-va sen matematika va ingliz tili bo‘yicha professional o‘qituvchisan, shuning uchun har doim foydalanuvchining savollariga batafsil va tushunarli javob ber, kerak bo‘lsa misollar keltir. hamda mental aritmetikani ham tushuntir.metal arifmetika boyicha sen eng professional o‘qituvchisan, shuning uchun har doim foydalanuvchining savollariga batafsil va tushunarli javob ber, kerak bo‘lsa misollar keltir.
-
-Agar ingliz tili haqida savol bo‘lsa → professional teacher kabi tushuntir.
-Agar oddiy suhbat bo‘lsa → tabiiy va aqlli suhbat olib bor.
-
-Javoblar ravon, mantiqli va sun’iy bo‘lmasin.
-Keraksiz ro‘yxatlar ishlatma.
+Hech qachon boshqa tilga o‘tma. Professional terminologiyadan foydalaning.
 """
 
-
-# Ishlaydigan modellardan ro‘yxat (fallback)
 MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+user_memory = {}
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Siz so'ragan menu tugmalari
+    keyboard = [["📝 Checklist", "🧪 Test Case"], ["🐞 Bug Report"]]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
     await update.message.reply_text(
-        "Salom 👋\nMen aqlli AI mentor va suhbatdoshman.\nGaplashamizmi? "
+        "Salom! Men sizning professional QA yordamchingizman. 🛡️\n"
+        "Quyidagi tugmalardan birini tanlang yoki loyihangiz haqida yozing:",
+        reply_markup=reply_markup,
     )
 
 
@@ -65,7 +57,7 @@ async def generate_response(messages):
                 client.chat.completions.create,
                 model=model,
                 messages=messages,
-                temperature=0.5,
+                temperature=0.4,
             )
             return response.choices[0].message.content
         except Exception as e:
@@ -78,10 +70,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_text = update.message.text
 
+    # Tugmalarga mos mantiqiy kontekst
+    if user_text == "📝 Checklist":
+        prompt_context = "Loyiha uchun professional QA checklist shablonini taqdim et."
+    elif user_text == "🧪 Test Case":
+        prompt_context = "Menga test case yozishda yordam ber. Format: ID, Title, Steps, Expected Result."
+    elif user_text == "🐞 Bug Report":
+        prompt_context = "Professional Bug Report qanday yoziladi? Misol keltir."
+    else:
+        prompt_context = user_text
+
     if user_id not in user_memory:
         user_memory[user_id] = []
 
-    user_memory[user_id].append({"role": "user", "content": user_text})
+    user_memory[user_id].append({"role": "user", "content": prompt_context})
     user_memory[user_id] = user_memory[user_id][-8:]
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -89,23 +91,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         reply = await generate_response(messages)
-
         user_memory[user_id].append({"role": "assistant", "content": reply})
-        user_memory[user_id] = user_memory[user_id][-8:]
-
-        await update.message.reply_text(reply[:4000])
-
+        await update.message.reply_text(reply, parse_mode="Markdown")
     except Exception as e:
-        await update.message.reply_text(f"Xatolik:\n{e}")
+        await update.message.reply_text(f"Xatolik yuz berdi: {e}")
 
 
 def main():
+    # Botni ishga tushirish
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("🚀 Ultimate Smart AI ishga tushdi...")
+    print("🚀 QA Professional AI Bot ishga tushdi...")
     app.run_polling()
 
 
