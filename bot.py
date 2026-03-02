@@ -11,99 +11,69 @@ from telegram.ext import (
     filters,
 )
 
-# --- KONFIGURATSIYA ---
+# --- CONFIG ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
 client = Groq(api_key=GROQ_API_KEY)
 
-# Professional QA Shablonlari
-TEMPLATES = {
-    "checklist": """📝 **QA CHECKLIST SHABLONI**
----
-1. **UI/UX Tekshiruvi:**
-   - [ ] Barcha tugmalar bosiladimi?
-   - [ ] Ranglar va shriftlar dizaynga mosmi?
-   - [ ] Adaptivlik (Mobile/Tablet) joyidami?
-2. **Funksionallik:**
-   - [ ] Login/Register to'g'ri ishlayaptimi?
-   - [ ] Validatsiyalar (bo'sh maydon, xato format) ishlayaptimi?
-   - [ ] Ma'lumotlar bazasiga to'g'ri saqlanyaptimi?
-3. **Performance:**
-   - [ ] Sahifa 3 soniyadan tez yuklanyaptimi?
-""",
-    "testcase": """🧪 **TEST CASE SHABLONI**
----
-**ID:** TC-001
-**Title:** [Tizim nomi] - [Funksiya nomi]ni tekshirish
-**Pre-conditions:** Foydalanuvchi tizimga kirgan bo'lishi kerak.
-**Steps:**
-1. Sahifaga o'ting.
-2. [X] tugmasini bosing.
-3. Ma'lumotlarni kiriting.
-**Expected Result:** Tizim "Muvaffaqiyatli" xabarini chiqarishi kerak.
-**Priority:** High/Medium/Low
-""",
-    "bugreport": """🐞 **BUG REPORT SHABLONI**
----
-**Summary:** [Qisqa va aniq sarlavha]
-**Severity:** Critical / Major / Minor
-**Priority:** High / Medium / Low
-**Steps to Reproduce:**
-1. Ilovani oching.
-2. Menyuga kiring.
-3. [X] tugmasini bosing.
-**Actual Result:** Tizim xatolik berib yopilib qoldi.
-**Expected Result:** Tugma bosilganda keyingi sahifa ochilishi kerak.
-**Environment:** Chrome v120, Windows 11.
-""",
+# Senior QA Ma'lumotlar Bazasi (Templates)
+QA_KNOWLEDGE = {
+    "api": "🚀 **API Testing (Postman/Curl)**\n- **Endpoint:** `GET /api/v1/resource`\n- **Headers:** `Content-Type: application/json`\n- **Status Codes:** 200 (OK), 201 (Created), 400 (Bad Request), 401 (Unauthorized), 500 (Server Error)\n- **Checklist:** Response body structure, Data types, Error messages.",
+    "sql": "💾 **SQL for QA (Quick Commands)**\n- `SELECT * FROM users WHERE email = 'test@example.com';`\n- `UPDATE orders SET status = 'shipped' WHERE id = 101;`\n- `DELETE FROM logs WHERE created_at < '2023-01-01';` \n- **Tip:** Har doim `SELECT` bilan tekshirib ko'rib, keyin `UPDATE` qil!",
+    "severity": "📊 **Severity vs Priority**\n- **S1 (Blocker):** Tizim butunlay ishlamayapti.\n- **S2 (Critical):** Asosiy funksiya buzuq, workaround yo'q.\n- **S3 (Major):** Funksiya xato ishlayapti, lekin workaround bor.\n- **P1 (High):** Darhol tuzatilishi kerak.",
 }
 
-SYSTEM_PROMPT = "Siz Senior QA muhandisisiz. Foydalanuvchi qaysi tilda yozsa, faqat o'sha tilda javob bering."
+SYSTEM_PROMPT = """Siz 20 yillik tajribaga ega Senior QA Engineersiz. 
+Junior QA-ga mentorlik qilasiz. Javoblaringiz qisqa, professional va ISTQB standartlariga mos bo'lsin.
+Foydalanuvchi qaysi tilda yozsa, o'sha tilda javob bering."""
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [["📝 Checklist", "🧪 Test Case"], ["🐞 Bug Report"]]
+    keyboard = [
+        ["📝 Checklist", "🧪 Test Case"],
+        ["🐞 Bug Report", "🚀 API Testing"],
+        ["📊 Severity/Priority", "💾 SQL for QA"],
+    ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     await update.message.reply_text(
-        "Salom! Men professional QA yordamchiman. Quyidagi tugmalar orqali tayyor shablonlarni olishingiz yoki AI dan so'rashingiz mumkin:",
+        "Xush kelibsiz, hamkasb! 🤝 Men sizning Senior QA mentorizman.\n"
+        "Loyihangizda qanday yordam kerak? Quyidagilardan birini tanlang:",
         reply_markup=reply_markup,
     )
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_text = update.message.text
+    text = update.message.text
 
-    # 1. Shablonlarni tekshirish
-    if user_text == "📝 Checklist":
-        await update.message.reply_text(TEMPLATES["checklist"])
+    # Static logic
+    if text == "🚀 API Testing":
+        await update.message.reply_text(QA_KNOWLEDGE["api"])
         return
-    elif user_text == "🧪 Test Case":
-        await update.message.reply_text(TEMPLATES["testcase"])
+    elif text == "💾 SQL for QA":
+        await update.message.reply_text(QA_KNOWLEDGE["sql"])
         return
-    elif user_text == "🐞 Bug Report":
-        await update.message.reply_text(TEMPLATES["bugreport"])
+    elif text == "📊 Severity/Priority":
+        await update.message.reply_text(QA_KNOWLEDGE["severity"])
         return
+    # Oldingi shablonlar (Checklist, Test Case, Bug Report) AI orqali yoki static davom etadi
 
-    # 2. Agar tugma emas, savol bo'lsa AI javob beradi
+    # AI Logic for anything else
     try:
         response = await asyncio.to_thread(
             client.chat.completions.create,
             model="llama-3.3-70b-versatile",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_text},
+                {"role": "user", "content": text},
             ],
-            temperature=0.4,
+            temperature=0.3,
         )
         await update.message.reply_text(response.choices[0].message.content)
     except Exception as e:
-        logger.error(f"Xato: {e}")
         await update.message.reply_text(
-            "Xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring."
+            "Texnik nosozlik. Senior QA choy ichgani ketdi, birozdan keyin qaytadi."
         )
 
 
@@ -111,7 +81,6 @@ def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    print("🚀 Bot Railway serverida ishlamoqda...")
     app.run_polling()
 
 
