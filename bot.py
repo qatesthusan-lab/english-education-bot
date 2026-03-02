@@ -12,8 +12,8 @@ from telegram.ext import (
 )
 
 # --- SIZNING TOKENLARINGIZ ---
-BOT_TOKEN = "BOT_TOKEN"
-GROQ_API_KEY = "GROQ_API_KEY"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 # Groq mijozini sozlash
 client = Groq(api_key=GROQ_API_KEY)
