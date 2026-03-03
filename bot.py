@@ -32,33 +32,34 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Klientlarni ishga tushirish
+# AI Klientini ishga tushirish
 client = Groq(api_key=GROQ_API_KEY)
 
 
 def get_jira_client():
-    # URL-ni tozalash: https://name.atlassian.net ko'rinishiga keltirish
+    """Jira bilan ulanishni o'rnatish va URL-ni tozalash"""
     base_url = JIRA_URL.split('/jira/')[0] if '/jira/' in JIRA_URL else JIRA_URL
     return JIRA(server=base_url, basic_auth=(JIRA_EMAIL, JIRA_API_TOKEN))
 
 
-# Senior QA Prompt
+# Professional Senior QA Prompt
 SYSTEM_PROMPT = """Siz 20 yillik tajribaga ega Senior QA Lead muhandisiz. 
 Vazifangiz: Foydalanuvchi yozgan xabarni professional Jira formatiga (Summary, Steps to Reproduce, Expected/Actual Result) keltirish. 
-Faqat tanlangan tilda javob bering."""
+Faqat tanlangan tilda javob bering. Javobni Markdown formatida chiroyli qiling."""
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [["📝 Checklist & Test Case", "🐞 Bug Report"]]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     await update.message.reply_text(
-        "Xush kelibsiz, Senior QA! 🤜🤛\nJira (MFT) integratsiyasi tayyor.\n"
-        "Muammoni yoki test rejani yozing, men uni professional hisobot qilaman.",
+        "Xush kelibsiz, Senior QA! 🤜🤛\nJira integratsiyasi va AI tayyor.\n"
+        "Muammoni yozing, men uni professional formatga keltiraman.",
         reply_markup=reply_markup,
     )
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Foydalanuvchi xabarini qabul qilish va til tanlashni so'rash"""
     context.user_data['raw_input'] = update.message.text
 
     keyboard = [
@@ -75,12 +76,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Tanlangan tilda AI orqali hisobot yaratish"""
     query = update.callback_query
     await query.answer()
 
     data = query.data
     lang_map = {'uz_lang': 'O\'zbek tili', 'ru_lang': 'Rus tili', 'en_lang': 'English'}
-
     if data not in lang_map:
         return
 
@@ -88,7 +89,7 @@ async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_text = context.user_data.get('raw_input')
 
     await query.edit_message_text(
-        text=f"🔄 AI {selected_lang}da professional hisobot tayyorlamoqda..."
+        text=f"🔄 AI {selected_lang}da hisobot tayyorlamoqda, kuting..."
     )
 
     try:
@@ -108,24 +109,20 @@ async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data['last_report'] = report
 
         keyboard = [
-            [
-                InlineKeyboardButton(
-                    "🚀 Jira'ga yuborish (MFT)", callback_data='send_to_jira'
-                )
-            ]
+            [InlineKeyboardButton("🚀 Jira'ga yuborish", callback_data='send_to_jira')]
         ]
         await query.edit_message_text(
-            text=f"📋 **Tayyorlangan Hisobot ({selected_lang}):**\n\n{report}",
+            text=f"📋 **Tayyorlangan Hisobot:**\n\n{report}",
             reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown",
         )
     except Exception as e:
         logger.error(f"AI Error: {e}")
-        await query.message.reply_text(
-            f"❌ AI Xatosi (API Key-ni tekshiring): {str(e)}"
-        )
+        await query.message.reply_text(f"❌ AI Xatosi: {str(e)}")
 
 
 async def jira_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ticketni dinamik Issue Type bilan Jira'ga yuborish"""
     query = update.callback_query
     await query.answer()
 
@@ -134,29 +131,46 @@ async def jira_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("Xatolik: Hisobot topilmadi.")
         return
 
-    await query.edit_message_text(text="⏳ Jira'ga yuborilmoqda...")
+    await query.edit_message_text(text="⏳ Jira bilan bog'lanilmoqda...")
 
     try:
         jira = get_jira_client()
-        # Summary (Sarlavha) tayyorlash
-        summary = (
+
+        # 1. Dinamik Issue Type tanlash (Bug, Task, etc.)
+        project = await asyncio.to_thread(jira.project, PROJECT_KEY)
+        issue_types = project.issueTypes
+
+        selected_type = None
+        # Avval Bug yoki shunga o'xshashini qidiramiz
+        for it in issue_types:
+            if it.name.lower() in ['bug', 'ошибка', 'xato', 'issue']:
+                selected_type = it.name
+                break
+
+        # Agar topilmasa, ro'yxatdagi birinchisini olamiz
+        if not selected_type:
+            selected_type = issue_types[0].name
+
+        # 2. Sarlavhani tozalash
+        summary_text = (
             report_content.split('\n')[0][:100]
             .replace('#', '')
             .replace('*', '')
             .strip()
         )
 
+        # 3. Ticket yaratish
         issue_dict = {
-            'project': PROJECT_KEY,  # 'MFT' kodi Railway Variables-dan keladi
-            'summary': summary or "Bug Report from Telegram",
+            'project': PROJECT_KEY,
+            'summary': summary_text or "Bug Report from Bot",
             'description': report_content,
-            'issuetype': {'name': 'Bug'},
+            'issuetype': {'name': selected_type},
         }
 
         new_issue = await asyncio.to_thread(jira.create_issue, fields=issue_dict)
 
         await query.edit_message_text(
-            text=f"✅ **JIRA TICKET OCHILDI!**\n\n🆔 ID: `{new_issue.key}`\n🔗 [Ticketni ko'rish]({new_issue.permalink()})",
+            text=f"✅ **JIRA TICKET OCHILDI!**\n\n🆔 ID: `{new_issue.key}`\n📂 Tur: `{selected_type}`\n🔗 [Ticketga o'tish]({new_issue.permalink()})",
             parse_mode="Markdown",
         )
     except Exception as e:
@@ -169,14 +183,14 @@ async def jira_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
+    # Handlerlarni qo'shish
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(
-        CallbackQueryHandler(language_callback, pattern='^(uz_lang|ru_lang|en_lang)$')
-    )
+    app.add_handler(CallbackQueryHandler(language_callback, pattern='_lang$'))
     app.add_handler(CallbackQueryHandler(jira_callback, pattern='^send_to_jira$'))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    print("🚀 Senior QA Bot ishga tushdi...")
+    print("🚀 Senior QA Bot Jira integratsiyasi bilan ishga tushdi...")
+    # Eski xabarlarni o'tkazib yuborish (Conflict oldini olish uchun)
     app.run_polling(drop_pending_updates=True)
 
 
