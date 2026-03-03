@@ -53,9 +53,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = [
         [
-            InlineKeyboardButton("🇺🇿 UZ", callback_data='lang_uz'),
-            InlineKeyboardButton("🇷🇺 RU", callback_data='lang_ru'),
-            InlineKeyboardButton("🇺🇸 EN", callback_data='lang_en'),
+            InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data='lang_uzbek'),
+            InlineKeyboardButton("🇷🇺 Русский", callback_data='lang_russian'),
+            InlineKeyboardButton("🇺🇸 English", callback_data='lang_english'),
         ]
     ]
     await update.message.reply_text(
@@ -74,23 +74,29 @@ async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ Matn topilmadi.")
         return
 
-    lang_code = query.data.split('_')[1]
-    lang_name = {'uz': 'O\'zbek tili', 'ru': 'Rus tili', 'en': 'English'}[lang_code]
+    # Tilni aniq ajratib olish
+    selected_lang = query.data.split('_')[1]  # uzbek, russian yoki english
 
-    await query.edit_message_text(f"⏳ AI {lang_name}da hisobot tayyorlamoqda...")
+    await query.edit_message_text(
+        f"⏳ AI {selected_lang.capitalize()} tilida hisobot tayyorlamoqda..."
+    )
 
     try:
+        # Promptni juda qat'iy qildik
         response = await asyncio.to_thread(
             client.chat.completions.create,
             model="llama-3.1-8b-instant",
             messages=[
                 {
                     "role": "system",
-                    "content": f"Siz Senior QA-siz. Hisobotni {lang_name}da Jira formatida tayyorlang. Maxsus belgilarni (Markdown) ishlatmang, faqat oddiy matn bering.",
+                    "content": f"You are a Senior QA. You MUST write the report ONLY in {selected_lang}. Do not use any other language. Use professional Jira format (Summary, Steps, Expected, Actual).",
                 },
-                {"role": "user", "content": raw_text},
+                {
+                    "role": "user",
+                    "content": f"Translate and format this issue into {selected_lang}: {raw_text}",
+                },
             ],
-            temperature=0.3,
+            temperature=0.1,  # Ijodiylikni kamaytirib, aniqlikni oshirdik
         )
         report = response.choices[0].message.content
         context.user_data[f'report_{user_id}'] = report
@@ -98,10 +104,8 @@ async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
             [InlineKeyboardButton("🚀 Jira'ga yuborish", callback_data='to_jira')]
         ]
-
-        # Parse mode-ni o'chirib qo'yamiz (None), shunda xato bermaydi
         await query.edit_message_text(
-            text=f"📋 **Tayyorlangan Hisobot:**\n\n{report}",
+            text=f"📋 **Tayyorlangan Hisobot ({selected_lang.capitalize()}):**\n\n{report}",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode=None,
         )
@@ -125,33 +129,30 @@ async def jira_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         jira = get_jira_client()
-        project = await asyncio.to_thread(jira.project, PROJECT_KEY)
-        issue_type = next(
-            (
-                it.name
-                for it in project.issueTypes
-                if it.name.lower() in ['bug', 'xato', 'issue']
-            ),
-            project.issueTypes[0].name,
-        )
+        # MFT loyihasiga to'g'ridan-to'g'ri 'Bug' sifatida yuboramiz
+        # Agar 'Bug' turi bo'lmasa, Jira xato beradi - shunda 'Task' qilib ko'ring
 
-        summary = report.split('\n')[0][:100].strip()
-        new_issue = await asyncio.to_thread(
-            jira.create_issue,
-            fields={
-                'project': PROJECT_KEY,
-                'summary': summary or "QA Bug Report",
-                'description': report,
-                'issuetype': {'name': issue_type},
-            },
-        )
-        # Bu yerda Markdown ishlatish xavfsiz, chunki link formatini o'zimiz yozdik
+        summary = report.split('\n')[0][:100].replace('#', '').strip()
+
+        issue_dict = {
+            'project': PROJECT_KEY,
+            'summary': summary or "New QA Bug",
+            'description': report,
+            'issuetype': {'name': 'Bug'},  # Agar ko'rinmasa, 'Task' deb o'zgartiring
+        }
+
+        new_issue = await asyncio.to_thread(jira.create_issue, fields=issue_dict)
+
+        # Jira permalink ba'zan xato berishi mumkin, shuning uchun URLni o'zimiz yasaymiz
+        clean_url = f"{JIRA_URL.rstrip('/')}/browse/{new_issue.key}"
+
         await query.edit_message_text(
-            text=f"✅ **Ticket ochildi!**\n🆔 ID: `{new_issue.key}`\n🔗 [Ko'rish]({new_issue.permalink()})",
+            text=f"✅ **Ticket ochildi!**\n🆔 ID: `{new_issue.key}`\n🔗 [Jirada ko'rish]({clean_url})",
             parse_mode="Markdown",
         )
     except Exception as e:
-        await query.message.reply_text(f"❌ Jira xatosi: {e}")
+        logger.error(f"Jira Error: {e}")
+        await query.message.reply_text(f"❌ Jira xatosi: {str(e)}")
 
 
 def main():
