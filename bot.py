@@ -2,11 +2,18 @@ import os
 import logging
 import asyncio
 from groq import Groq
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from jira import JIRA
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    ReplyKeyboardMarkup,
+)
 from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
+    CallbackQueryHandler,
     ContextTypes,
     filters,
 )
@@ -14,102 +21,118 @@ from telegram.ext import (
 # --- KONFIGURATSIYA ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+JIRA_URL = os.getenv("JIRA_URL")
+JIRA_EMAIL = os.getenv("JIRA_EMAIL")
+JIRA_API_TOKEN = os.getenv("JIRA_API_TOKEN")
+PROJECT_KEY = os.getenv("JIRA_PROJECT_KEY")
 
-logging.basicConfig(level=logging.INFO)
 client = Groq(api_key=GROQ_API_KEY)
 
-# Senior Bilimlar Bazasi
-QA_KNOWLEDGE = {
-    "automation": "🤖 **Automation Roadmap (Junior to Senior)**\n\n"
-    "1. **Language:** Python yoki Java asoslarini o'rganing.\n"
-    "2. **Locators:** CSS Selectors va XPath (Absolute vs Relative) farqini biling.\n"
-    "3. **Frameworks:** Pytest (Python) yoki JUnit/TestNG (Java).\n"
-    "4. **Tools:** Selenium, Playwright (Zamonaviy tanlov), Appium (Mobile).\n"
-    "5. **CI/CD:** Jenkins yoki GitHub Actions orqali testlarni avtomatik yurgizish.",
-    "techniques": "📐 **Test Design Techniques (Kalkulyator)**\n\n"
-    "Sizga diapazonni tahlil qilib beraman. Masalan, '1-100 oralig'i' deb yozsangiz, "
-    "men sizga Boundary Value Analysis (BVA) nuqtalarini chiqarib beraman.",
-}
 
-# Tizim ko'rsatmasi (System Prompt)
-SYSTEM_PROMPT = """Siz 20 yillik tajribaga ega Senior QA Lead va SDET muhandisiz. 
-Sizning vazifangiz Junior QA muhandisini Senior darajasiga ko'tarishdir.
-Javoblaringizda doim:
-1. ISTQB terminologiyasidan foydalaning.
-2. Loglar yuborilsa, ularni tahlil qilib, 'Root Cause' (Asosiy sabab) ni toping.
-3. Avtomatlashtirish bo'yicha eng yaxshi praktikalarni (Page Object Model, DRY, SOLID) tavsiya qiling.
-Foydalanuvchi qaysi tilda yozsa, o'sha tilda javob bering."""
+def get_jira_client():
+    base_url = JIRA_URL.split('/jira/')[0] if '/jira/' in JIRA_URL else JIRA_URL
+    return JIRA(server=base_url, basic_auth=(JIRA_EMAIL, JIRA_API_TOKEN))
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         ["📝 Checklist & Test Case", "🐞 Bug Report"],
-        ["🏗️ Test Turlari", "🤖 Automation Roadmap"],
-        ["📊 Severity/Priority", "📐 Test Techniques"],
-        ["🚀 API & SQL Hub", "👨‍🏫 Interview Mentor"],
+        ["👨‍🏫 Interview Mentor"],
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     await update.message.reply_text(
-        "Xush kelibsiz, Senior QA kursiga! ⚔️\n\n"
-        "Men sizning shaxsiy mentorizman. Bu yerda biz shunchaki test qilmaymiz, "
-        "biz sifatli mahsulot quramiz. Qaysi yo'nalishdan boshlaymiz?",
+        "Xush kelibsiz! Bug yoki Test Case haqida yozing, men uni professional formatga keltiraman.",
         reply_markup=reply_markup,
     )
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
+    # Foydalanuvchi matnini saqlaymiz
+    context.user_data['raw_input'] = update.message.text
 
-    # Static Professional Knowledge
-    if text == "🤖 Automation Roadmap":
-        await update.message.reply_text(QA_KNOWLEDGE["automation"])
-        return
-    elif text == "📐 Test Techniques":
-        await update.message.reply_text(QA_KNOWLEDGE["techniques"])
-        return
-    elif text == "🚀 API & SQL Hub":
-        await update.message.reply_text(
-            "Endpointlar, status kodlari yoki SQL querylar bo'yicha nima savolingiz bor?"
-        )
-        return
+    # Tilni tanlash tugmalari
+    keyboard = [
+        [
+            InlineKeyboardButton("🇺🇿 O'zbekcha", callback_data='lang_uz'),
+            InlineKeyboardButton("🇷🇺 Русский", callback_data='lang_ru'),
+            InlineKeyboardButton("🇺🇸 English", callback_data='lang_en'),
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        "Hisobot qaysi tilda bo'lsin?", reply_markup=reply_markup
+    )
 
-    # AI Mentor & Log Analyzer Logic
+
+async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    lang_map = {'lang_uz': 'O\'zbek tili', 'lang_ru': 'Rus tili', 'lang_en': 'English'}
+    selected_lang = lang_map[query.data]
+    raw_text = context.user_data.get('raw_input')
+
+    # AI orqali tanlangan tilda hisobot tayyorlash
+    response = await asyncio.to_thread(
+        client.chat.completions.create,
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {
+                "role": "system",
+                "content": f"Siz Senior QA-siz. Hisobotni {selected_lang}da professional Jira formatida tayyorlang.",
+            },
+            {"role": "user", "content": raw_text},
+        ],
+        temperature=0.3,
+    )
+
+    report = response.choices[0].message.content
+    context.user_data['last_report'] = report
+
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "🚀 Jira'ga yuborish (MFT loyihasiga)", callback_data='send_to_jira'
+            )
+        ]
+    ]
+    await query.edit_message_text(
+        text=f"📋 **Tayyorlangan Hisobot ({selected_lang}):**\n\n{report}",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+async def jira_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    report_content = context.user_data.get('last_report')
+
     try:
-        # Junior ko'pincha log tashlaydi, AI uni tahlil qilishi kerak
-        is_log = (
-            "error" in text.lower()
-            or "exception" in text.lower()
-            or "stack trace" in text.lower()
-        )
+        jira = get_jira_client()
+        summary = report_content.split('\n')[0][:100].replace('#', '').strip()
 
-        prefix = "🚨 **Log Tahlili:**\n" if is_log else ""
+        issue_dict = {
+            'project': PROJECT_KEY,
+            'summary': summary,
+            'description': report_content,
+            'issuetype': {'name': 'Bug'},
+        }
 
-        response = await asyncio.to_thread(
-            client.chat.completions.create,
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": text},
-            ],
-            temperature=0.3,
+        new_issue = await asyncio.to_thread(jira.create_issue, fields=issue_dict)
+        await query.edit_message_text(
+            text=f"✅ **JIRA TICKET OCHILDI!**\n\n🆔 Key: `{new_issue.key}`\n🔗 [Ticketga o'tish]({new_issue.permalink()})",
+            parse_mode="Markdown",
         )
-        await update.message.reply_text(prefix + response.choices[0].message.content)
     except Exception as e:
-        await update.message.reply_text(
-            "⚠️ Tizimda kichik bug topildi. Mentor uni tuzatmoqda."
-        )
+        await query.message.reply_text(f"❌ Jira xatosi: {str(e)}")
 
 
 def main():
-    if not BOT_TOKEN:
-        print("XATO: BOT_TOKEN topilmadi!")
-        return
-
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    print("🚀 Senior QA Hub Railway'da ishga tushdi...")
+    app.add_handler(CallbackQueryHandler(language_callback, pattern='^lang_'))
+    app.add_handler(CallbackQueryHandler(jira_callback, pattern='send_to_jira'))
     app.run_polling()
 
 
